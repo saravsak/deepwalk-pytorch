@@ -9,11 +9,14 @@ from argparse import ArgumentParser, FileType, ArgumentDefaultsHelpFormatter
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 import logging
+import time
+import pdb
 
 from . import graph
 from . import walks as serialized_walks
-from gensim.models import Word2Vec
-from .skipgram import Skipgram
+#from gensim.models import Word2Vec
+#from .skipgram import Skipgram
+from .word2vec import ModWord2Vec
 
 from six import text_type as unicode
 from six import iteritems
@@ -48,6 +51,8 @@ def debug(type_, value, tb):
 
 def process(args):
 
+  global begin
+
   if args.format == "adjlist":
     G = graph.load_adjacencylist(args.input, undirected=args.undirected)
   elif args.format == "edgelist":
@@ -67,35 +72,13 @@ def process(args):
 
   print("Data size (walks*length): {}".format(data_size))
 
-  if data_size < args.max_memory_data_size:
-    print("Walking...")
-    walks = graph.build_deepwalk_corpus(G, num_paths=args.number_walks,
-                                        path_length=args.walk_length, alpha=0, rand=random.Random(args.seed))
-    print("Training...")
-    model = Word2Vec(walks, size=args.representation_size, window=args.window_size, min_count=0, sg=1, hs=1, workers=args.workers)
-  else:
-    print("Data size {} is larger than limit (max-memory-data-size: {}).  Dumping walks to disk.".format(data_size, args.max_memory_data_size))
-    print("Walking...")
-
-    walks_filebase = args.output + ".walks"
-    walk_files = serialized_walks.write_walks_to_disk(G, walks_filebase, num_paths=args.number_walks,
-                                         path_length=args.walk_length, alpha=0, rand=random.Random(args.seed),
-                                         num_workers=args.workers)
-
-    print("Counting vertex frequency...")
-    if not args.vertex_freq_degree:
-      vertex_counts = serialized_walks.count_textfiles(walk_files, args.workers)
-    else:
-      # use degree distribution for frequency in tree
-      vertex_counts = G.degree(nodes=G.iterkeys())
-
-    print("Training...")
-    walks_corpus = serialized_walks.WalksCorpus(walk_files)
-    model = Skipgram(sentences=walks_corpus, vocabulary_counts=vertex_counts,
-                     size=args.representation_size,
-                     window=args.window_size, min_count=0, trim_rule=None, workers=args.workers)
-
-  model.wv.save_word2vec_format(args.output)
+  print("Walking...")
+  walks = graph.build_deepwalk_corpus(G, num_paths=args.number_walks,
+                                      path_length=args.walk_length, alpha=0, rand=random.Random(args.seed))
+  print("Training...")
+  model = ModWord2Vec(walks, size=args.representation_size, window=args.window_size, min_count=0, sg=1, hs=1, workers=args.workers, compute_loss=True)
+  model.save_emb(args.output, len(G.nodes()))
+  
 
 
 def main():
